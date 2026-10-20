@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZeeXTrace — Admin Panel</title>
+<style>
+  :root { --bg:#060a06; --card:#0b120b; --green:#00ff41; --dim:#a5b9a5; --amber:#ffb300; --red:#ff5a5a; }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: #e8f5e9; font-family: monospace; margin: 0; padding: 16px; }
+  h1 { color: var(--green); font-size: 22px; margin: 4px 0 2px; }
+  h2 { color: var(--green); font-size: 16px; margin: 18px 0 8px; }
+  .sub { color: var(--dim); font-size: 12px; }
+  .card { background: var(--card); border: 1px solid var(--green); border-radius: 10px; padding: 14px; margin: 10px 0; }
+  input, textarea { background: #040804; border: 2px solid var(--green); border-radius: 8px; color: #e8f5e9;
+    padding: 10px; font-family: monospace; width: 100%; margin: 6px 0; }
+  button { background: var(--card); color: var(--green); border: 1px solid var(--green); border-radius: 8px;
+    padding: 8px 12px; font-family: monospace; cursor: pointer; margin: 3px 2px; font-size: 13px; }
+  button.primary { background: var(--green); color: #060a06; font-weight: bold; }
+  button.danger { color: var(--red); border-color: var(--red); }
+  button.amber { color: var(--amber); border-color: var(--amber); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid #1d2b1d; text-align: left; padding: 7px 6px; vertical-align: top; }
+  th { color: var(--green); }
+  .tabs { margin: 14px 0 4px; }
+  .tabs button.active { background: var(--green); color: #060a06; font-weight: bold; }
+  .msg { border-bottom: 1px solid #1d2b1d; padding: 8px 4px; font-size: 13px; }
+  .msg .who { color: var(--amber); font-size: 12px; }
+  .msg .when { color: var(--dim); font-size: 11px; }
+  .hidden { display: none; }
+  .err { color: var(--red); }
+  .ok { color: var(--green); }
+  .rowlink { cursor: pointer; }
+  .rowlink:hover { background: #101a10; }
+</style>
+</head>
+<body>
+<h1>ZEEXTRACE — ADMIN PANEL</h1>
+<div class="sub">by ZeeXFame • users, premium, announcement, chat moderation</div>
+
+<div id="loginBox" class="card">
+  <h2>Admin login</h2>
+  <input id="email" type="email" placeholder="Admin email" autocomplete="username">
+  <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+  <button class="primary" id="loginBtn">LOG IN</button>
+  <div id="loginMsg" class="sub"></div>
+</div>
+
+<div id="appBox" class="hidden">
+  <div class="card">
+    Logged in as <b id="whoami"></b>
+    <button id="logoutBtn" style="float:right">LOG OUT</button>
+    <div id="adminMsg" class="sub"></div>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="users" class="active">Users</button>
+    <button data-tab="announce">Announcement</button>
+    <button data-tab="hq">HQ Chat</button>
+    <button data-tab="groups">Groups</button>
+    <button data-tab="dms">DMs</button>
+    <button data-tab="reports">Reports</button>
+    <button data-tab="settings">Settings</button>
+  </div>
+
+  <div id="tab-users">
+    <button id="refreshUsers">↻ Refresh users</button>
+    <div class="card"><table>
+      <thead><tr><th>Email</th><th>Codename / Agent</th><th>Plan</th><th>Premium until</th><th>Grant plan</th><th>Ban</th></tr></thead>
+      <tbody id="usersBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <div id="tab-announce" class="hidden">
+    <div class="card">
+      <h2>Announcement (shown on the app Home screen)</h2>
+      <textarea id="announceText" rows="3" placeholder="e.g. New: Yearly plan now Rs 1,500!"></textarea>
+      <button class="primary" id="saveAnnounce">SAVE ANNOUNCEMENT</button>
+      <button class="danger" id="clearAnnounce">CLEAR</button>
+      <span id="announceMsg" class="sub"></span>
+    </div>
+  </div>
+
+  <div id="tab-hq" class="hidden">
+    <button id="refreshHq">↻ Refresh HQ messages</button>
+    <div class="card" id="hqList">Loading…</div>
+  </div>
+
+  <div id="tab-groups" class="hidden">
+    <button id="refreshGroups">↻ Refresh groups</button>
+    <div class="card" id="groupList">Loading…</div>
+    <div class="card" id="groupMsgs">Pick a group to see its messages.</div>
+  </div>
+
+  <div id="tab-dms" class="hidden">
+    <button id="refreshDms">↻ Refresh DM threads</button>
+    <div class="card" id="dmList">Loading…</div>
+    <div class="card" id="dmMsgs">Pick a thread to see its messages.</div>
+  </div>
+
+  <div id="tab-reports" class="hidden">
+    <button id="refreshReports">↻ Refresh reports</button>
+    <div class="card" id="reportList">Loading…</div>
+  </div>
+
+  <div id="tab-settings" class="hidden">
+    <div class="card">
+      <h2>WhatsApp number</h2>
+      <input id="waNumber" type="text" inputmode="numeric" placeholder="e.g. 14037125713" style="width:100%">
+      <div class="sub">WhatsApp number (digits only, with country code). Buy Premium and contact buttons in the app open this number. Changes apply automatically — no app update needed.</div>
+      <button class="primary" id="saveSettings">SAVE SETTINGS</button>
+      <span id="settingsMsg" class="sub"></span>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+/* Real Firebase config — project "zeextrace" (wired 2026-10-21). Matches BackendConfig.kt in the app. */
+const firebaseConfig = {
+  apiKey: "AIzaSyAB2-Sz_JvynC_9KKt0CUpg8g0OF_bU0d0",
+  authDomain: "zeextrace.firebaseapp.com",
+  databaseURL: "https://zeextrace-default-rtdb.firebaseio.com",
+  projectId: "zeextrace",
+  appId: "1:478781628344:android:0482db1b650b1789a4f94d"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+const $ = id => document.getElementById(id);
+const DAY = 86400000;
+
+function fmtDate(ms) {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  const left = Math.max(0, Math.ceil((ms - Date.now()) / DAY));
+  return d.toLocaleDateString() + " (" + left + "d left)";
+}
+function fmtTs(ms) { return ms ? new Date(ms).toLocaleString() : ""; }
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ---------- auth ---------- */
+$("loginBtn").onclick = async () => {
+  $("loginMsg").textContent = "Logging in…";
+  try {
+    await signInWithEmailAndPassword(auth, $("email").value.trim(), $("password").value);
+  } catch (e) {
+    $("loginMsg").innerHTML = '<span class="err">' + esc(e.message) + "</span>";
+  }
+};
+$("logoutBtn").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, async user => {
+  if (!user) {
+    $("loginBox").classList.remove("hidden");
+    $("appBox").classList.add("hidden");
+    return;
+  }
+  // Admin gate: admins/{uid} must be true (set by Zeeshan in the DB / rules).
+  const snap = await get(ref(db, "admins/" + user.uid));
+  if (snap.val() !== true) {
+    $("loginBox").classList.remove("hidden");
+    $("appBox").classList.add("hidden");
+    $("loginMsg").innerHTML = '<span class="err">This account is not an admin (admins/' + esc(user.uid) + " is not set).</span>";
+    await signOut(auth);
+    return;
+  }
+  $("whoami").textContent = user.email + "  (uid: " + user.uid + ")";
+  $("loginBox").classList.add("hidden");
+  $("appBox").classList.remove("hidden");
+  loadUsers();
+  loadAnnouncement();
+});
+
+/* ---------- tabs ---------- */
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    ["users", "announce", "hq", "groups", "dms", "reports", "settings"].forEach(t =>
+      $("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab));
+    if (b.dataset.tab === "hq") loadHq();
+    if (b.dataset.tab === "groups") loadGroups();
+    if (b.dataset.tab === "dms") loadDms();
+    if (b.dataset.tab === "reports") loadReports();
+    if (b.dataset.tab === "settings") loadSettings();
+  };
+});
+
+/* ---------- users & premium ---------- */
+async function loadUsers() {
+  const body = $("usersBody");
+  body.innerHTML = "<tr><td colspan='6'>Loading…</td></tr>";
+  const [usersSnap, profilesSnap, bannedSnap] = await Promise.all([
+    get(ref(db, "users")), get(ref(db, "publicProfiles")), get(ref(db, "banned"))
+  ]);
+  const users = usersSnap.val() || {};
+  const profiles = profilesSnap.val() || {};
+  const banned = bannedSnap.val() || {};
+  const rows = Object.keys(users).sort((a, b) => (users[a].email || "").localeCompare(users[b].email || ""));
+  if (!rows.length) { body.innerHTML = "<tr><td colspan='6'>No users yet.</td></tr>"; return; }
+  body.innerHTML = "";
+  for (const uid of rows) {
+    const u = users[uid] || {};
+    const prof = profiles[uid] || {};
+    const plan = u.plan || "none";
+    const until = plan === "lifetime" ? "Lifetime" : fmtDate(u.premium_until || 0);
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" + esc(u.email || "") + "<br><span class='sub'>" + esc(uid) + "</span></td>" +
+      "<td>" + esc(prof.codename || "") + "<br><span class='sub'>" + esc(prof.agentId || "") + "</span></td>" +
+      "<td><b>" + esc(plan.toUpperCase()) + "</b>" + (banned[uid] ? " <span class='err'>BANNED</span>" : "") + "</td>" +
+      "<td>" + esc(until) + "</td>" +
+      "<td>" +
+      "<button data-grant='monthly' data-uid='" + esc(uid) + "'>Monthly · Rs 300</button>" +
+      "<button data-grant='yearly' data-uid='" + esc(uid) + "'>Yearly · Rs 1,500</button>" +
+      "<button data-grant='lifetime' data-uid='" + esc(uid) + "'>Lifetime · Rs 3,000</button>" +
+      "<button class='danger' data-grant='none' data-uid='" + esc(uid) + "'>Clear</button>" +
+      "</td>" +
+      "<td><button class='amber' data-ban='" + esc(uid) + "' data-banned='" + (banned[uid] ? "1" : "0") + "'>" +
+      (banned[uid] ? "Unban" : "Ban") + "</button></td>";
+    body.appendChild(tr);
+  }
+  body.querySelectorAll("[data-grant]").forEach(btn => btn.onclick = () => grantPlan(btn.dataset.uid, btn.dataset.grant));
+  body.querySelectorAll("[data-ban]").forEach(btn => btn.onclick = () => toggleBan(btn.dataset.ban, btn.dataset.banned === "1"));
+}
+$("refreshUsers").onclick = loadUsers;
+
+async function grantPlan(uid, plan) {
+  let until = 0;
+  if (plan === "monthly") until = Date.now() + 30 * DAY;
+  if (plan === "yearly") until = Date.now() + 365 * DAY;
+  if (plan === "lifetime") until = 0;
+  if (plan === "none") until = 0;
+  await update(ref(db, "users/" + uid), { plan: plan, premium_until: until });
+  $("adminMsg").innerHTML = '<span class="ok">Plan updated → ' + esc(plan.toUpperCase()) + " for " + esc(uid) + "</span>";
+  loadUsers();
+}
+async function toggleBan(uid, currentlyBanned) {
+  if (currentlyBanned) await remove(ref(db, "banned/" + uid));
+  else await set(ref(db, "banned/" + uid), true);
+  loadUsers();
+}
+
+/* ---------- announcement ---------- */
+async function loadAnnouncement() {
+  const snap = await get(ref(db, "announcement"));
+  $("announceText").value = snap.val() || "";
+}
+$("saveAnnounce").onclick = async () => {
+  await set(ref(db, "announcement"), $("announceText").value.trim());
+  $("announceMsg").textContent = "Saved.";
+};
+$("clearAnnounce").onclick = async () => {
+  await set(ref(db, "announcement"), "");
+  $("announceText").value = "";
+  $("announceMsg").textContent = "Cleared.";
+};
+
+/* ---------- settings ---------- */
+const DEFAULT_WHATSAPP = "14037125713"; // must match BackendConfig.DEFAULT_WHATSAPP in the app
+async function loadSettings() {
+  const snap = await get(ref(db, "settings/whatsapp"));
+  $("waNumber").value = (snap.val() || DEFAULT_WHATSAPP);
+  $("settingsMsg").textContent = "";
+}
+$("saveSettings").onclick = async () => {
+  const digits = $("waNumber").value.replace(/\D/g, "");
+  if (!digits) { $("settingsMsg").textContent = "Enter a number first."; return; }
+  await set(ref(db, "settings/whatsapp"), digits);
+  $("waNumber").value = digits;
+  $("settingsMsg").textContent = "Saved — the app will use this number automatically.";
+};
+
+/* ---------- chat moderation ---------- */
+function msgRow(m, onDelete) {
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerHTML = "<span class='who'>" + esc(m.codename || "?") + " • " + esc(m.agentId || "") +
+    "</span> <span class='when'>" + esc(fmtTs(m.ts)) + "</span><br>" + esc(m.text || "") + " ";
+  const del = document.createElement("button");
+  del.className = "danger";
+  del.textContent = "Delete";
+  del.onclick = onDelete;
+  div.appendChild(del);
+  return div;
+}
+async function renderMsgs(container, path) {
+  container.innerHTML = "Loading…";
+  const snap = await get(ref(db, path));
+  const data = snap.val() || {};
+  const ids = Object.keys(data).sort((a, b) => (data[a].ts || 0) - (data[b].ts || 0));
+  container.innerHTML = ids.length ? "" : "No messages.";
+  for (const id of ids) {
+    container.appendChild(msgRow(data[id], async () => {
+      if (confirm("Delete this message?")) { await remove(ref(db, path + "/" + id)); renderMsgs(container, path); }
+    }));
+  }
+}
+function loadHq() { renderMsgs($("hqList"), "chat/hq"); }
+$("refreshHq").onclick = loadHq;
+
+async function loadGroups() {
+  const list = $("groupList");
+  list.innerHTML = "Loading…";
+  const snap = await get(ref(db, "groups"));
+  const data = snap.val() || {};
+  const ids = Object.keys(data);
+  list.innerHTML = ids.length ? "" : "No groups.";
+  for (const id of ids) {
+    const g = data[id] || {};
+    const div = document.createElement("div");
+    div.className = "msg rowlink";
+    div.innerHTML = "<b>" + esc(g.name || id) + "</b> <span class='sub'>owner " + esc(g.ownerUid || "") +
+      " • " + Object.keys(g.members || {}).length + " members</span>";
+    div.onclick = () => renderMsgs($("groupMsgs"), "groupMsgs/" + id);
+    list.appendChild(div);
+  }
+}
+$("refreshGroups").onclick = loadGroups;
+
+async function loadDms() {
+  const list = $("dmList");
+  list.innerHTML = "Loading…";
+  const snap = await get(ref(db, "dms"));
+  const data = snap.val() || {};
+  const keys = Object.keys(data);
+  list.innerHTML = keys.length ? "" : "No DM threads.";
+  for (const key of keys) {
+    const div = document.createElement("div");
+    div.className = "msg rowlink";
+    div.innerHTML = "<b>Thread:</b> <span class='sub'>" + esc(key) + "</span> — " +
+      Object.keys(data[key] || {}).length + " messages";
+    div.onclick = () => renderMsgs($("dmMsgs"), "dms/" + key);
+    list.appendChild(div);
+  }
+}
+$("refreshDms").onclick = loadDms;
+
+async function loadReports() {
+  const list = $("reportList");
+  list.innerHTML = "Loading…";
+  const snap = await get(ref(db, "reports"));
+  const data = snap.val() || {};
+  const ids = Object.keys(data).sort((a, b) => (data[b].ts || 0) - (data[a].ts || 0));
+  list.innerHTML = ids.length ? "" : "No reports.";
+  for (const id of ids) {
+    const r = data[id] || {};
+    const div = document.createElement("div");
+    div.className = "msg";
+    div.innerHTML = "<span class='who'>Report</span> <span class='when'>" + esc(fmtTs(r.ts)) + "</span><br>" +
+      "Node: " + esc(r.node || "") + "<br>Reporter: <span class='sub'>" + esc(r.reporter || "") + "</span> ";
+    const del = document.createElement("button");
+    del.className = "danger";
+    del.textContent = "Dismiss";
+    del.onclick = async () => { await remove(ref(db, "reports/" + id)); loadReports(); };
+    div.appendChild(del);
+    list.appendChild(div);
+  }
+}
+$("refreshReports").onclick = loadReports;
+</script>
+</body>
+</html>
