@@ -62,6 +62,7 @@
     <button data-tab="reports">Reports</button>
     <button data-tab="settings">Settings</button>
     <button data-tab="sites">Username Sites</button>
+    <button data-tab="update">App Update</button>
   </div>
 
   <div id="tab-users">
@@ -131,6 +132,23 @@
       <button id="addSite">+ ADD SITE</button>
       <button class="primary" id="saveSites">SAVE LIST</button>
       <span id="sitesMsg" class="sub"></span>
+    </div>
+  </div>
+
+  <div id="tab-update" class="hidden">
+    <div class="card">
+      <h2>App Update (settings/appUpdate)</h2>
+      <div class="sub">The app checks this every time it opens. If the versionCode here is higher than the installed app, users see an update prompt with your notes and a Download button. Put the APK file's permanent link as the URL.</div>
+      <h2>Latest version code</h2>
+      <input id="updCode" type="number" min="1" step="1" placeholder="e.g. 5">
+      <h2>Latest version name</h2>
+      <input id="updName" type="text" placeholder="e.g. 1.3.1">
+      <h2>APK download URL</h2>
+      <input id="updUrl" type="text" placeholder="Permanent link to the APK file (leave empty = no update offered)">
+      <h2>Update notes (shown to users in the update prompt)</h2>
+      <textarea id="updNotes" rows="3" placeholder="e.g. Fixed chat send bug + faster scans. Please update!"></textarea>
+      <button class="primary" id="saveUpdate">SAVE UPDATE INFO</button>
+      <span id="updateMsg" class="sub"></span>
     </div>
   </div>
 </div>
@@ -204,7 +222,7 @@ document.querySelectorAll(".tabs button").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
-    ["users", "announce", "hq", "groups", "dms", "reports", "settings", "sites"].forEach(t =>
+    ["users", "announce", "hq", "groups", "dms", "reports", "settings", "sites", "update"].forEach(t =>
       $("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab));
     if (b.dataset.tab === "hq") loadHq();
     if (b.dataset.tab === "groups") loadGroups();
@@ -212,6 +230,7 @@ document.querySelectorAll(".tabs button").forEach(b => {
     if (b.dataset.tab === "reports") loadReports();
     if (b.dataset.tab === "settings") loadSettings();
     if (b.dataset.tab === "sites") loadSites();
+    if (b.dataset.tab === "update") loadUpdate();
   };
 });
 
@@ -455,6 +474,34 @@ $("addSite").onclick = () => {
 $("saveSites").onclick = async () => {
   await set(ref(db, "settings/usernameSites"), sitesCache);
   $("sitesMsg").textContent = "Saved — " + sitesCache.length + " site(s) in the remote list.";
+};
+
+/* ---------- app update (settings/appUpdate) ---------- */
+async function loadUpdate() {
+  const snap = await get(ref(db, "settings/appUpdate"));
+  const u = snap.val() || {};
+  $("updCode").value = (u.versionCode === null || u.versionCode === undefined) ? "" : u.versionCode;
+  $("updName").value = u.versionName || "";
+  $("updUrl").value = u.apkUrl || "";
+  $("updNotes").value = u.notes || "";
+  $("updateMsg").textContent = "";
+}
+$("saveUpdate").onclick = async () => {
+  const code = parseInt($("updCode").value, 10);
+  if (isNaN(code) || code <= 0) {
+    $("updateMsg").textContent = "Version code must be a positive integer (1, 2, 3…).";
+    return;
+  }
+  const obj = {
+    versionCode: code,
+    versionName: $("updName").value.trim(),
+    apkUrl: $("updUrl").value.trim(),
+    notes: $("updNotes").value.trim()
+  };
+  await set(ref(db, "settings/appUpdate"), obj);
+  $("updateMsg").textContent = obj.apkUrl
+    ? "Saved — the app will offer version " + (obj.versionName || code) + " (code " + code + ") next time it opens."
+    : "Saved — note: the APK URL is empty, so no update will be offered until you add one.";
 };
 </script>
 </body>
