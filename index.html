@@ -61,6 +61,7 @@
     <button data-tab="dms">DMs</button>
     <button data-tab="reports">Reports</button>
     <button data-tab="settings">Settings</button>
+    <button data-tab="sites">Username Sites</button>
   </div>
 
   <div id="tab-users">
@@ -108,8 +109,28 @@
       <h2>WhatsApp number</h2>
       <input id="waNumber" type="text" inputmode="numeric" placeholder="e.g. 14037125713" style="width:100%">
       <div class="sub">WhatsApp number (digits only, with country code). Buy Premium and contact buttons in the app open this number. Changes apply automatically — no app update needed.</div>
+      <h2>Free email scans per day</h2>
+      <input id="freeScans" type="number" min="0" step="1" placeholder="3">
+      <div class="sub">How many free email scans each user gets per day. Default: 3.</div>
       <button class="primary" id="saveSettings">SAVE SETTINGS</button>
       <span id="settingsMsg" class="sub"></span>
+    </div>
+  </div>
+
+  <div id="tab-sites" class="hidden">
+    <button id="refreshSites">↻ Reload list</button>
+    <div class="card">
+      <h2>Username Sites (remote list)</h2>
+      <div class="sub">Sites added here appear in the app's Username Search automatically (app v1.2+ reads this list) — no app update needed.</div>
+      <div id="siteList">Loading…</div>
+      <h2>Add a site</h2>
+      <input id="siteName" type="text" placeholder="Site name, e.g. GitHub">
+      <input id="siteUrl" type="text" placeholder="Profile URL, e.g. https://github.com/{username}">
+      <input id="siteNotFound" type="text" placeholder="Not-found text (optional) — text the site shows when a profile does not exist">
+      <div id="siteWarn" class="sub" style="color:var(--red)"></div>
+      <button id="addSite">+ ADD SITE</button>
+      <button class="primary" id="saveSites">SAVE LIST</button>
+      <span id="sitesMsg" class="sub"></span>
     </div>
   </div>
 </div>
@@ -183,13 +204,14 @@ document.querySelectorAll(".tabs button").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
-    ["users", "announce", "hq", "groups", "dms", "reports", "settings"].forEach(t =>
+    ["users", "announce", "hq", "groups", "dms", "reports", "settings", "sites"].forEach(t =>
       $("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab));
     if (b.dataset.tab === "hq") loadHq();
     if (b.dataset.tab === "groups") loadGroups();
     if (b.dataset.tab === "dms") loadDms();
     if (b.dataset.tab === "reports") loadReports();
     if (b.dataset.tab === "settings") loadSettings();
+    if (b.dataset.tab === "sites") loadSites();
   };
 });
 
@@ -266,16 +288,24 @@ $("clearAnnounce").onclick = async () => {
 /* ---------- settings ---------- */
 const DEFAULT_WHATSAPP = "14037125713"; // must match BackendConfig.DEFAULT_WHATSAPP in the app
 async function loadSettings() {
-  const snap = await get(ref(db, "settings/whatsapp"));
-  $("waNumber").value = (snap.val() || DEFAULT_WHATSAPP);
+  const [waSnap, fsSnap] = await Promise.all([
+    get(ref(db, "settings/whatsapp")), get(ref(db, "settings/freeScansPerDay"))
+  ]);
+  $("waNumber").value = (waSnap.val() || DEFAULT_WHATSAPP);
+  const fs = fsSnap.val();
+  $("freeScans").value = (fs === null || fs === undefined) ? 3 : fs;
   $("settingsMsg").textContent = "";
 }
 $("saveSettings").onclick = async () => {
   const digits = $("waNumber").value.replace(/\D/g, "");
   if (!digits) { $("settingsMsg").textContent = "Enter a number first."; return; }
+  let scans = parseInt($("freeScans").value, 10);
+  if (isNaN(scans) || scans < 0) scans = 3;
   await set(ref(db, "settings/whatsapp"), digits);
+  await set(ref(db, "settings/freeScansPerDay"), scans);
   $("waNumber").value = digits;
-  $("settingsMsg").textContent = "Saved — the app will use this number automatically.";
+  $("freeScans").value = scans;
+  $("settingsMsg").textContent = "Saved — the app will use these settings automatically.";
 };
 
 /* ---------- chat moderation ---------- */
@@ -365,6 +395,67 @@ async function loadReports() {
   }
 }
 $("refreshReports").onclick = loadReports;
+
+/* ---------- username sites (remote list: settings/usernameSites) ---------- */
+let sitesCache = [];
+function normalizeSites(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  // RTDB can return arrays as objects with numeric keys.
+  return Object.keys(val).sort((a, b) => Number(a) - Number(b)).map(k => val[k]).filter(Boolean);
+}
+async function loadSites() {
+  $("siteList").innerHTML = "Loading…";
+  const snap = await get(ref(db, "settings/usernameSites"));
+  sitesCache = normalizeSites(snap.val());
+  renderSites();
+  $("sitesMsg").textContent = "";
+}
+$("refreshSites").onclick = loadSites;
+function renderSites() {
+  const list = $("siteList");
+  list.innerHTML = sitesCache.length ? "" :
+    "No sites in the remote list yet. Add sites below, then SAVE LIST.";
+  sitesCache.forEach((s, i) => {
+    const div = document.createElement("div");
+    div.className = "msg";
+    div.innerHTML = "<b>" + esc(s.name || "") + "</b><br><span class='sub'>" + esc(s.url || "") + "</span>" +
+      (s.notFoundText ? "<br><span class='sub'>Not-found text: " + esc(s.notFoundText) + "</span>" : "") + " ";
+    const del = document.createElement("button");
+    del.className = "danger";
+    del.textContent = "Delete";
+    del.onclick = () => {
+      sitesCache.splice(i, 1);
+      renderSites();
+      $("sitesMsg").textContent = "Removed — press SAVE LIST to apply.";
+    };
+    div.appendChild(del);
+    list.appendChild(div);
+  });
+}
+$("addSite").onclick = () => {
+  const name = $("siteName").value.trim();
+  const url = $("siteUrl").value.trim();
+  const nft = $("siteNotFound").value.trim();
+  $("siteWarn").textContent = "";
+  if (!name || !url) { $("siteWarn").textContent = "Site name and profile URL are required."; return; }
+  if (!url.includes("{username}")) {
+    $("siteWarn").textContent = "Warning: the URL is missing the {username} placeholder — the app cannot build profile links without it. Put {username} where the username goes, e.g. https://example.com/{username}";
+    return;
+  }
+  const entry = { name: name, url: url };
+  if (nft) entry.notFoundText = nft;
+  sitesCache.push(entry);
+  $("siteName").value = "";
+  $("siteUrl").value = "";
+  $("siteNotFound").value = "";
+  renderSites();
+  $("sitesMsg").textContent = "Added — press SAVE LIST to publish it to the app.";
+};
+$("saveSites").onclick = async () => {
+  await set(ref(db, "settings/usernameSites"), sitesCache);
+  $("sitesMsg").textContent = "Saved — " + sitesCache.length + " site(s) in the remote list.";
+};
 </script>
 </body>
 </html>
