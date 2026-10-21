@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ZeeXTrace — Admin Panel</title>
+<title>MR. GHOST — Admin Panel</title>
 <style>
   :root { --bg:#060a06; --card:#0b120b; --green:#00ff41; --dim:#a5b9a5; --amber:#ffb300; --red:#ff5a5a; }
   * { box-sizing: border-box; }
@@ -35,8 +35,8 @@
 </style>
 </head>
 <body>
-<h1>ZEEXTRACE — ADMIN PANEL</h1>
-<div class="sub">by ZeeXFame • users, premium, announcement, chat moderation</div>
+<h1>MR. GHOST — ADMIN PANEL</h1>
+<div class="sub">Developer console • users, premium, announcement, chat moderation, developer inbox</div>
 
 <div id="loginBox" class="card">
   <h2>Admin login</h2>
@@ -63,6 +63,8 @@
     <button data-tab="settings">Settings</button>
     <button data-tab="sites">Username Sites</button>
     <button data-tab="update">App Update</button>
+    <button data-tab="ghost">MR. GHOST Profile</button>
+    <button data-tab="inbox">Inbox</button>
   </div>
 
   <div id="tab-users">
@@ -151,12 +153,36 @@
       <span id="updateMsg" class="sub"></span>
     </div>
   </div>
+
+  <div id="tab-ghost" class="hidden">
+    <div class="card">
+      <h2>MR. GHOST Profile (settings/ghostProfile)</h2>
+      <div class="sub">This is the developer identity shown in the app: the "Message Developer" screen banner, DP and name, and the name users see on developer replies. Changes apply automatically — no app update needed.</div>
+      <h2>Display name</h2>
+      <input id="ghostName" type="text" placeholder="MR. GHOST" style="width:100%">
+      <h2>DP image URL</h2>
+      <input id="ghostDpUrl" type="text" placeholder="https://… (direct image link)" style="width:100%">
+      <img id="ghostDpPreview" alt="DP preview" style="max-width:120px;max-height:120px;border-radius:12px;margin-top:6px">
+      <h2>Banner image URL</h2>
+      <input id="ghostBannerUrl" type="text" placeholder="https://… (direct image link)" style="width:100%">
+      <img id="ghostBannerPreview" alt="Banner preview" style="max-width:100%;max-height:160px;border-radius:12px;margin-top:6px">
+      <br>
+      <button class="primary" id="saveGhost">SAVE PROFILE</button>
+      <span id="ghostMsg" class="sub"></span>
+    </div>
+  </div>
+
+  <div id="tab-inbox" class="hidden">
+    <button id="refreshInbox">↻ Refresh inbox</button>
+    <div class="card" id="inboxList">Loading…</div>
+    <div class="card" id="inboxThread">Pick a thread to read and reply.</div>
+  </div>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, get, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 /* Real Firebase config — project "zeextrace" (wired 2026-10-21). Matches BackendConfig.kt in the app. */
 const firebaseConfig = {
@@ -222,7 +248,7 @@ document.querySelectorAll(".tabs button").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
-    ["users", "announce", "hq", "groups", "dms", "reports", "settings", "sites", "update"].forEach(t =>
+    ["users", "announce", "hq", "groups", "dms", "reports", "settings", "sites", "update", "ghost", "inbox"].forEach(t =>
       $("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab));
     if (b.dataset.tab === "hq") loadHq();
     if (b.dataset.tab === "groups") loadGroups();
@@ -231,6 +257,8 @@ document.querySelectorAll(".tabs button").forEach(b => {
     if (b.dataset.tab === "settings") loadSettings();
     if (b.dataset.tab === "sites") loadSites();
     if (b.dataset.tab === "update") loadUpdate();
+    if (b.dataset.tab === "ghost") loadGhost();
+    if (b.dataset.tab === "inbox") loadInbox();
   };
 });
 
@@ -503,6 +531,116 @@ $("saveUpdate").onclick = async () => {
     ? "Saved — the app will offer version " + (obj.versionName || code) + " (code " + code + ") next time it opens."
     : "Saved — note: the APK URL is empty, so no update will be offered until you add one.";
 };
+
+/* ---------- MR. GHOST profile (settings/ghostProfile) ---------- */
+async function loadGhost() {
+  const snap = await get(ref(db, "settings/ghostProfile"));
+  const g = snap.val() || {};
+  $("ghostName").value = g.name || "MR. GHOST";
+  $("ghostDpUrl").value = g.dpUrl || "";
+  $("ghostBannerUrl").value = g.bannerUrl || "";
+  $("ghostDpPreview").src = g.dpUrl || "";
+  $("ghostBannerPreview").src = g.bannerUrl || "";
+  $("ghostMsg").textContent = "";
+}
+$("ghostDpUrl").addEventListener("input", () => { $("ghostDpPreview").src = $("ghostDpUrl").value.trim(); });
+$("ghostBannerUrl").addEventListener("input", () => { $("ghostBannerPreview").src = $("ghostBannerUrl").value.trim(); });
+$("saveGhost").onclick = async () => {
+  const obj = {
+    name: $("ghostName").value.trim() || "MR. GHOST",
+    dpUrl: $("ghostDpUrl").value.trim(),
+    bannerUrl: $("ghostBannerUrl").value.trim()
+  };
+  await set(ref(db, "settings/ghostProfile"), obj);
+  $("ghostMsg").textContent = "Saved — the app will show this identity automatically.";
+};
+
+/* ---------- developer inbox (devInbox) ---------- */
+let inboxOpenUid = null;
+async function loadInbox() {
+  const list = $("inboxList");
+  list.innerHTML = "Loading…";
+  const [inboxSnap, profilesSnap] = await Promise.all([
+    get(ref(db, "devInbox")), get(ref(db, "publicProfiles"))
+  ]);
+  const inbox = inboxSnap.val() || {};
+  const profiles = profilesSnap.val() || {};
+  const uids = Object.keys(inbox);
+  const lastTs = uid => {
+    const msgs = inbox[uid] || {};
+    return Object.values(msgs).reduce((a, m) => Math.max(a, (m && m.ts) || 0), 0);
+  };
+  uids.sort((a, b) => lastTs(b) - lastTs(a));
+  list.innerHTML = uids.length ? "" : "No developer messages yet.";
+  for (const uid of uids) {
+    const msgs = inbox[uid] || {};
+    const ids = Object.keys(msgs).sort((a, b) => (msgs[a].ts || 0) - (msgs[b].ts || 0));
+    const last = ids.length ? msgs[ids[ids.length - 1]] : null;
+    const prof = profiles[uid] || {};
+    const div = document.createElement("div");
+    div.className = "msg rowlink";
+    div.innerHTML = "<b>" + esc(prof.codename || uid) + "</b> <span class='sub'>" + esc(prof.agentId || "") +
+      " • " + ids.length + " messages" + (last ? " • last " + esc(fmtTs(last.ts)) : "") + "</span><br>" +
+      "<span class='sub'>" + (last ? esc((last.fromAdmin ? "You: " : "") + (last.text || "")).slice(0, 90) : "") + "</span>";
+    div.onclick = () => openInboxThread(uid);
+    list.appendChild(div);
+  }
+  if (inboxOpenUid && inbox[inboxOpenUid]) openInboxThread(inboxOpenUid, true);
+}
+$("refreshInbox").onclick = loadInbox;
+
+async function openInboxThread(uid, keepScroll) {
+  inboxOpenUid = uid;
+  const box = $("inboxThread");
+  box.innerHTML = "Loading…";
+  const [threadSnap, profilesSnap, ghostSnap] = await Promise.all([
+    get(ref(db, "devInbox/" + uid)), get(ref(db, "publicProfiles")), get(ref(db, "settings/ghostProfile"))
+  ]);
+  const msgs = threadSnap.val() || {};
+  const prof = (profilesSnap.val() || {})[uid] || {};
+  const ghostName = ((ghostSnap.val() || {}).name) || "MR. GHOST";
+  const ids = Object.keys(msgs).sort((a, b) => (msgs[a].ts || 0) - (msgs[b].ts || 0));
+  box.innerHTML = "";
+  const head = document.createElement("div");
+  head.innerHTML = "<b>" + esc(prof.codename || uid) + "</b> <span class='sub'>" + esc(prof.agentId || "") + " • uid " + esc(uid) + "</span>";
+  box.appendChild(head);
+  if (!ids.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "No messages in this thread.";
+    box.appendChild(empty);
+  }
+  for (const id of ids) {
+    const m = msgs[id] || {};
+    const div = document.createElement("div");
+    div.className = "msg";
+    div.innerHTML = "<span class='who'>" + esc(m.fromAdmin ? ghostName + " (you)" : (prof.codename || "user")) +
+      "</span> <span class='when'>" + esc(fmtTs(m.ts)) + "</span><br>" + esc(m.text || "");
+    box.appendChild(div);
+  }
+  const ta = document.createElement("textarea");
+  ta.rows = 3;
+  ta.placeholder = "Reply as " + ghostName + "…";
+  ta.style.width = "100%";
+  const btn = document.createElement("button");
+  btn.className = "primary";
+  btn.textContent = "SEND REPLY";
+  btn.onclick = async () => {
+    const text = ta.value.trim();
+    if (!text) return;
+    btn.disabled = true;
+    try {
+      const node = push(ref(db, "devInbox/" + uid));
+      await set(node, { uid: auth.currentUser.uid, text: text, ts: Date.now(), fromAdmin: true });
+      openInboxThread(uid, true);
+      loadInbox();
+    } catch (e) {
+      alert("Reply failed: " + e.message + "\n(The v1.4 rules with the devInbox node must be published first.)");
+      btn.disabled = false;
+    }
+  };
+  box.appendChild(ta);
+  box.appendChild(btn);
+}
 </script>
 </body>
 </html>
